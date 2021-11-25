@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.1.31911.260
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "PoliNetworkWhatsAppBot", "PoliNetworkWhatsAppBot.njsproj", "{27EAC89D-834E-499B-A84D-D8F0B85A7F69}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{27EAC89D-834E-499B-A84D-D8F0B85A7F69}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{27EAC89D-834E-499B-A84D-D8F0B85A7F69}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{27EAC89D-834E-499B-A84D-D8F0B85A7F69}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{27EAC89D-834E-499B-A84D-D8F0B85A7F69}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {482882D0-F423-464B-825A-7CAE1B33273B}
+	EndGlobalSection
+EndGlobal
