@@ -6,6 +6,7 @@ const conn = new wa.WAConnection() // instantiate
 var ready = 0
 var myGroups = []
 var thrustedUsers = []
+var blockedUsers = []
 
 async function main() {
     conn.autoReconnect = wa.ReconnectMode.onConnectionLost // only automatically reconnect when the connection breaks
@@ -32,6 +33,24 @@ async function main() {
         initialize()
     })
 
+    conn.on('chat-new', async chat => {
+        const id = chat.jid
+
+        if (wa.isGroupID(id)) {
+            updateGroups(id)
+            var participants = (await conn.groupMetadata(id)).participants
+            participants.forEach(element => {
+                if (blockedUsers.includes(element)) {
+                    try {
+                        // elimina l'utente
+                    } catch {
+                        // manda messaggio a tutti gli authorized che non è riuscito
+                    }
+                }
+            })
+        }
+    })
+
     /**
      * The universal event for anything that happens
      * New messages, updated messages, read & delivered messages, participants typing etc.
@@ -46,14 +65,6 @@ async function main() {
         const messageContent = m.message
         const id = chat.jid
 
-        if (wa.isGroupID(id)) {
-            updateGroups(id)
-            /*var participants = (await conn.groupMetadata(id)).participants
-            participants.forEach(element => {
-                console.log(element)
-            })*/
-        }
-
         // if it is not a regular text or media message
         if (!messageContent) {
             return
@@ -63,27 +74,27 @@ async function main() {
         const messageType = Object.keys(messageContent)[0] // message will always contain one key signifying what kind of message
         if (messageType == wa.MessageType.text && thrustedUsers.includes(sender)) {
             const text = m.message.conversation
-            if (text == "!resetGroups") {
-                resetGroups();
+            await conn.chatRead(m.key.remoteJid) // mark chat read
+            const options: wa.MessageOptions = { quoted: m }
+            var type: wa.MessageType
+            type = wa.MessageType.text
+            if (text.includes("!banAll")) {
+                
             } else if (text.includes("!addThrustedUser")) {
-
+                var number = text.split(" ")[1]
+                if ((await addThrustedUser(number)) == true) {
+                    setTimeout(async () => {
+                        var content = "Thrusted user added successfully!"
+                        await conn.sendMessage(m.key.remoteJid, content, type, options)
+                    }, getRandomInt(5000))
+                } else {
+                    setTimeout(async () => {
+                        var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a thrusted user, text me !addThrustedUser 39123456789"
+                        await conn.sendMessage(m.key.remoteJid, content, type, options)
+                    }, getRandomInt(5000))
+                }
             }
         }
-
-        /*
-        // send a reply after 3 seconds
-        setTimeout(async () => {
-            await conn.chatRead(m.key.remoteJid) // mark chat read
-
-            const options: wa.MessageOptions = { quoted: m }
-            let content
-            let type: wa.MessageType
-            content = 'hello!' // send a "hello!" & quote the message recieved
-            type = wa.MessageType.text
-            const response = await conn.sendMessage(m.key.remoteJid, content, type, options)
-            console.log("sent message with ID '" + response.key.id + "' successfully")
-        }, 3 * 1000)
-        */
     })
 
     conn.on('close', ({ reason, isReconnecting }) => (
@@ -136,9 +147,15 @@ function updateGroups(id) {
     }
 }
 
-function resetGroups() {
-    myGroups = []
-    getGroups()
+async function addThrustedUser(number) {
+    const exists = await conn.isOnWhatsApp(number)
+    if (exists) {
+        thrustedUsers.push(exists.jid)
+        fs.writeFileSync('./thrusted_users.json', JSON.stringify(thrustedUsers, null, '\t'))
+        return true
+    } else {
+        return false
+    }
 }
 
 function getRandomInt(max) {
