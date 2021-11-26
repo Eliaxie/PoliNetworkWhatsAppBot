@@ -16,6 +16,7 @@ const conn = new wa.WAConnection(); // instantiate
 var ready = 0;
 var myGroups = [];
 var thrustedUsers = [];
+var blockedUsers = [];
 function main() {
     return __awaiter(this, void 0, void 0, function* () {
         conn.autoReconnect = wa.ReconnectMode.onConnectionLost; // only automatically reconnect when the connection breaks
@@ -38,6 +39,23 @@ function main() {
             ready++;
             initialize();
         });
+        conn.on('chat-new', (chat) => __awaiter(this, void 0, void 0, function* () {
+            const id = chat.jid;
+            if (wa.isGroupID(id)) {
+                updateGroups(id);
+                var participants = (yield conn.groupMetadata(id)).participants;
+                participants.forEach(element => {
+                    if (blockedUsers.includes(element)) {
+                        try {
+                            // elimina l'utente
+                        }
+                        catch (_a) {
+                            // manda messaggio a tutti gli authorized che non � riuscito
+                        }
+                    }
+                });
+            }
+        }));
         /**
          * The universal event for anything that happens
          * New messages, updated messages, read & delivered messages, participants typing etc.
@@ -49,14 +67,6 @@ function main() {
             }
             const m = chat.messages.all()[0]; // pull the new message from the update
             const messageContent = m.message;
-            const id = chat.jid;
-            if (wa.isGroupID(id)) {
-                updateGroups(id);
-                /*var participants = (await conn.groupMetadata(id)).participants
-                participants.forEach(element => {
-                    console.log(element)
-                })*/
-            }
             // if it is not a regular text or media message
             if (!messageContent) {
                 return;
@@ -65,26 +75,31 @@ function main() {
             const messageType = Object.keys(messageContent)[0]; // message will always contain one key signifying what kind of message
             if (messageType == wa.MessageType.text && thrustedUsers.includes(sender)) {
                 const text = m.message.conversation;
-                if (text == "!resetGroups") {
-                    resetGroups();
+                yield conn.chatRead(m.key.remoteJid); // mark chat read
+                const options = { quoted: m };
+                var type;
+                type = wa.MessageType.text;
+                if (text.includes("!banAll")) {
                 }
                 else if (text.includes("!addThrustedUser")) {
+                    var number = text.split(" ")[1];
+                    if ((yield addThrustedUser(number)) == true) {
+                        setTimeout(() => __awaiter(this, void 0, void 0, function* () {
+                            var content = "Thrusted user added successfully!";
+                            yield conn.sendMessage(sender, content, type, options);
+                        }), getRandomInt(5000));
+                    }
+                    else {
+                        setTimeout(() => __awaiter(this, void 0, void 0, function* () {
+                            var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a thrusted user, text me !addThrustedUser 39123456789";
+                            yield conn.sendMessage(sender, content, type, options);
+                        }), getRandomInt(5000));
+                    }
+                }
+                else if (text.includes("!resetLinks")) {
+                    resetLinks();
                 }
             }
-            /*
-            // send a reply after 3 seconds
-            setTimeout(async () => {
-                await conn.chatRead(m.key.remoteJid) // mark chat read
-    
-                const options: wa.MessageOptions = { quoted: m }
-                let content
-                let type: wa.MessageType
-                content = 'hello!' // send a "hello!" & quote the message recieved
-                type = wa.MessageType.text
-                const response = await conn.sendMessage(m.key.remoteJid, content, type, options)
-                console.log("sent message with ID '" + response.key.id + "' successfully")
-            }, 3 * 1000)
-            */
         }));
         conn.on('close', ({ reason, isReconnecting }) => (console.log('oh no got disconnected: ' + reason + ', reconnecting: ' + isReconnecting)));
     });
@@ -133,9 +148,32 @@ function updateGroups(id) {
         myGroups.push(id);
     }
 }
-function resetGroups() {
-    myGroups = [];
-    getGroups();
+function addThrustedUser(number) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const exists = yield conn.isOnWhatsApp(number);
+        if (exists) {
+            thrustedUsers.push(exists.jid);
+            fs.writeFileSync('./thrusted_users.json', JSON.stringify(thrustedUsers, null, '\t'));
+            return true;
+        }
+        else {
+            return false;
+        }
+    });
+}
+function resetLinks() {
+    var successfull = [];
+    var failed = [];
+    myGroups.forEach((element) => __awaiter(this, void 0, void 0, function* () {
+        try {
+            var newLink = yield conn.revokeInvite(element);
+            successfull.push(newLink);
+            successfull.push(element);
+        }
+        catch (_a) {
+            failed.push(element);
+        }
+    }));
 }
 function getRandomInt(max) {
     return Math.floor(Math.random() * max);

@@ -63,7 +63,6 @@ async function main() {
 
         const m = chat.messages.all()[0] // pull the new message from the update
         const messageContent = m.message
-        const id = chat.jid
 
         // if it is not a regular text or media message
         if (!messageContent) {
@@ -79,20 +78,22 @@ async function main() {
             var type: wa.MessageType
             type = wa.MessageType.text
             if (text.includes("!banAll")) {
-                
+
             } else if (text.includes("!addThrustedUser")) {
                 var number = text.split(" ")[1]
                 if ((await addThrustedUser(number)) == true) {
                     setTimeout(async () => {
                         var content = "Thrusted user added successfully!"
-                        await conn.sendMessage(m.key.remoteJid, content, type, options)
+                        await conn.sendMessage(sender, content, type, options)
                     }, getRandomInt(5000))
                 } else {
                     setTimeout(async () => {
                         var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a thrusted user, text me !addThrustedUser 39123456789"
-                        await conn.sendMessage(m.key.remoteJid, content, type, options)
+                        await conn.sendMessage(sender, content, type, options)
                     }, getRandomInt(5000))
                 }
+            } else if (text.includes("!resetLinks")) {
+                resetLinks()
             }
         }
     })
@@ -156,6 +157,20 @@ async function addThrustedUser(number) {
     } else {
         return false
     }
+}
+
+function resetLinks() {
+    var successfull = []
+    var failed = []
+    myGroups.forEach(async element => {
+        try {
+            var newLink = await conn.revokeInvite(element)
+            successfull.push(newLink)
+            successfull.push(element)
+        } catch {
+            failed.push(element)
+        }
+    })
 }
 
 function getRandomInt(max) {
