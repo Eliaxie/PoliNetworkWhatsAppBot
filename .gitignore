@@ -364,3 +364,4 @@ FodyWeavers.xsd
 /auth_info.json
 /thrusted_users.json
 /banned_users.json
+/groups.txt
