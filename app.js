@@ -13,10 +13,10 @@ const wa = require("@adiwajshing/baileys");
 const fs = require("fs");
 const readline = require("readline");
 const conn = new wa.WAConnection(); // instantiate
-var ready = 0;
 var myGroups = [];
+var myGroupsLinks = [];
 var thrustedUsers = [];
-var blockedUsers = [];
+var bannedUsers = [];
 function main() {
     return __awaiter(this, void 0, void 0, function* () {
         conn.autoReconnect = wa.ReconnectMode.onConnectionLost; // only automatically reconnect when the connection breaks
@@ -30,32 +30,28 @@ function main() {
         yield conn.connect();
         // credentials are updated on every connect
         const authInfo = conn.base64EncodedAuthInfo(); // get all the auth info we need to restore this session
-        fs.writeFileSync('./auth_info.json', JSON.stringify(authInfo, null, '\t')); // save this info to a file
+        try {
+            fs.writeFileSync('./auth_info.json', JSON.stringify(authInfo, null, '\t'));
+        }
+        catch (_a) {
+            console.log("Unable to save login information, the QR will be asked again next time");
+        } // save this info to a file
+        var ready = 0;
         conn.on('contacts-received', () => {
             ready++;
-            initialize();
+            initialize(ready);
         });
         conn.on('chats-received', () => {
             ready++;
-            initialize();
+            initialize(ready);
         });
-        conn.on('chat-new', (chat) => __awaiter(this, void 0, void 0, function* () {
-            const id = chat.jid;
-            if (wa.isGroupID(id)) {
-                updateGroups(id);
-                var participants = (yield conn.groupMetadata(id)).participants;
-                participants.forEach(element => {
-                    if (blockedUsers.includes(element)) {
-                        try {
-                            // elimina l'utente
-                        }
-                        catch (_a) {
-                            // manda messaggio a tutti gli authorized che non � riuscito
-                        }
-                    }
-                });
-            }
-        }));
+        conn.on('chat-new', chat => {
+            getGroups(chat);
+        });
+        conn.on('group-update', groupMetadata => {
+            console.log(groupMetadata.subject);
+            getGroups(conn.chats.get(groupMetadata.jid));
+        });
         /**
          * The universal event for anything that happens
          * New messages, updated messages, read & delivered messages, participants typing etc.
@@ -80,10 +76,24 @@ function main() {
                 var type;
                 type = wa.MessageType.text;
                 if (text.includes("!banAll")) {
+                    var number = text.split(" ")[1];
+                    var success = yield addUser(number, "banned");
+                    if (success && (yield banUsers()) == true) {
+                        setTimeout(() => __awaiter(this, void 0, void 0, function* () {
+                            var content = "User banned successfully!";
+                            yield conn.sendMessage(sender, content, type, options);
+                        }), getRandomInt(5000));
+                    }
+                    else {
+                        setTimeout(() => __awaiter(this, void 0, void 0, function* () {
+                            var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a banned user, text me !banAll 39123456789. It is also possible that I added the user in my list of people to ban but I didn't actually manage to ban them";
+                            yield conn.sendMessage(sender, content, type, options);
+                        }), getRandomInt(5000));
+                    }
                 }
                 else if (text.includes("!addThrustedUser")) {
                     var number = text.split(" ")[1];
-                    if ((yield addThrustedUser(number)) == true) {
+                    if ((yield addUser(number, "thrusted")) == true) {
                         setTimeout(() => __awaiter(this, void 0, void 0, function* () {
                             var content = "Thrusted user added successfully!";
                             yield conn.sendMessage(sender, content, type, options);
@@ -97,23 +107,36 @@ function main() {
                     }
                 }
                 else if (text.includes("!resetLinks")) {
-                    resetLinks();
                 }
             }
         }));
-        conn.on('close', ({ reason, isReconnecting }) => (console.log('oh no got disconnected: ' + reason + ', reconnecting: ' + isReconnecting)));
+        conn.on('close', ({ reason, isReconnecting }) => (console.log('Oh no got disconnected: ' + reason + ', reconnecting: ' + isReconnecting)));
     });
 }
-function initialize() {
+function initialize(ready) {
     if (ready == 2) {
-        getGroups();
         getThrustedUsers();
+        getBannedUsers();
+        getGroups(conn.chats.all());
     }
 }
 function getThrustedUsers() {
     return __awaiter(this, void 0, void 0, function* () {
         if (fs.existsSync('./thrusted_users.json')) {
-            thrustedUsers = JSON.parse(fs.readFileSync('./thrusted_users.json').toString());
+            try {
+                thrustedUsers = JSON.parse(fs.readFileSync('./thrusted_users.json').toString());
+            }
+            catch (_a) {
+                console.log("Unable to parse previously saved thrusted users, deleting the file and starting over");
+                try {
+                    fs.rmSync('./thrusted_users.json');
+                    getThrustedUsers();
+                }
+                catch (_b) {
+                    console.log("Unable to delete the old file, please fix the problem yourself");
+                    throw new Error();
+                }
+            }
         }
         else {
             const rl = readline.createInterface({
@@ -125,7 +148,12 @@ function getThrustedUsers() {
                 if (exists) {
                     console.log("Thrusted user added successfully, running the bot");
                     thrustedUsers.push(exists.jid);
-                    fs.writeFileSync('./thrusted_users.json', JSON.stringify(thrustedUsers, null, '\t'));
+                    try {
+                        fs.writeFileSync('./thrusted_users.json', JSON.stringify(thrustedUsers, null, '\t'));
+                    }
+                    catch (_c) {
+                        console.log("Unable to save the thrusted user to a file, this will not be persistent");
+                    }
                     rl.close();
                 }
                 else {
@@ -136,29 +164,81 @@ function getThrustedUsers() {
         }
     });
 }
-function getGroups() {
-    conn.chats.all().forEach(element => {
-        if (wa.isGroupID(element.jid)) {
-            myGroups.push(element.jid);
+function getBannedUsers() {
+    if (fs.existsSync('./banned_users.json')) {
+        try {
+            bannedUsers = JSON.parse(fs.readFileSync('./banned_users.json').toString());
+        }
+        catch (_a) {
+            console.log("Unable to parse previously saved banned users, please back them up and delete the file");
+            throw new Error();
+        }
+    }
+}
+function getGroups(chats) {
+    return __awaiter(this, void 0, void 0, function* () {
+        var addedNew = false;
+        for (var i = 0; i < chats.length; i++) {
+            addedNew = yield getGroupsWorker(chats[i]);
+        }
+        if (i == 0) {
+            addedNew = yield getGroupsWorker(chats);
+        }
+        if (addedNew) {
+            banUsers();
         }
     });
 }
-function updateGroups(id) {
-    if (!myGroups.includes(id)) {
-        myGroups.push(id);
-    }
+function getGroupsWorker(chat) {
+    return __awaiter(this, void 0, void 0, function* () {
+        var id = chat.jid;
+        if (!myGroups.includes(chat) && wa.isGroupID(id)) {
+            try {
+                myGroupsLinks.push(yield conn.groupInviteCode(id)); // only add to myGroups if the bot is admin
+                myGroups.push(chat);
+                return true;
+            }
+            catch (_a) {
+                return false;
+            }
+        }
+        else {
+            return false;
+        }
+    });
 }
-function addThrustedUser(number) {
+function addUser(number, type) {
     return __awaiter(this, void 0, void 0, function* () {
         const exists = yield conn.isOnWhatsApp(number);
         if (exists) {
-            thrustedUsers.push(exists.jid);
-            fs.writeFileSync('./thrusted_users.json', JSON.stringify(thrustedUsers, null, '\t'));
+            var id = exists.jid;
+            if (type == "thrusted") {
+                thrustedUsers.push(id);
+            }
+            else {
+                bannedUsers.push(id);
+            }
+            try {
+                if (type == "thrusted") {
+                    fs.writeFileSync('./thrusted_users.json', JSON.stringify(thrustedUsers, null, '\t'));
+                }
+                else {
+                    fs.writeFileSync('./banned_users.json', JSON.stringify(bannedUsers, null, '\t'));
+                }
+            }
+            catch (_a) {
+                console.log("Unable to save the new user to a file, this will not be persistent");
+            }
             return true;
         }
         else {
             return false;
         }
+    });
+}
+function banUsers() {
+    return __awaiter(this, void 0, void 0, function* () {
+        return true;
     });
 }
 function resetLinks() {
@@ -178,5 +258,5 @@ function resetLinks() {
 function getRandomInt(max) {
     return Math.floor(Math.random() * max);
 }
-main().catch((err) => console.log(`encountered error: ${err}`));
+main().catch((err) => console.log(`Encountered error: ${err}`));
 //# sourceMappingURL=app.js.map

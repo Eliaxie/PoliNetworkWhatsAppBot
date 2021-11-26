@@ -3,10 +3,10 @@ import * as fs from 'fs'
 import * as readline from 'readline'
 
 const conn = new wa.WAConnection() // instantiate
-var ready = 0
 var myGroups = []
+var myGroupsLinks = []
 var thrustedUsers = []
-var blockedUsers = []
+var bannedUsers = []
 
 async function main() {
     conn.autoReconnect = wa.ReconnectMode.onConnectionLost // only automatically reconnect when the connection breaks
@@ -22,40 +22,34 @@ async function main() {
     await conn.connect()
     // credentials are updated on every connect
     const authInfo = conn.base64EncodedAuthInfo() // get all the auth info we need to restore this session
-    fs.writeFileSync('./auth_info.json', JSON.stringify(authInfo, null, '\t')) // save this info to a file
+    try {
+        fs.writeFileSync('./auth_info.json', JSON.stringify(authInfo, null, '\t'))
+    } catch {
+        console.log("Unable to save login information, the QR will be asked again next time")
+    } // save this info to a file
 
+    var ready = 0
     conn.on('contacts-received', () => {
         ready++
-        initialize()
+        initialize(ready)
     })
     conn.on('chats-received', () => {
         ready++
-        initialize()
+        initialize(ready)
     })
 
-    conn.on('chat-new', async chat => {
-        const id = chat.jid
-
-        if (wa.isGroupID(id)) {
-            updateGroups(id)
-            var participants = (await conn.groupMetadata(id)).participants
-            participants.forEach(element => {
-                if (blockedUsers.includes(element)) {
-                    try {
-                        // elimina l'utente
-                    } catch {
-                        // manda messaggio a tutti gli authorized che non è riuscito
-                    }
-                }
-            })
-        }
+    conn.on('chat-new', chat => {
+        getGroups(chat)
+    })
+    conn.on('group-update', groupMetadata => {
+        getGroups(conn.chats.get(groupMetadata.jid))
     })
 
     /**
      * The universal event for anything that happens
      * New messages, updated messages, read & delivered messages, participants typing etc.
      */
-    conn.on('chat-update', async chat => {
+    conn.on('chat-update', async (chat) => {
         // only do something when a new message is received
         if (!chat.hasNewMessage) {
             return
@@ -78,10 +72,22 @@ async function main() {
             var type: wa.MessageType
             type = wa.MessageType.text
             if (text.includes("!banAll")) {
-
+                var number = text.split(" ")[1]
+                var success = await addUser(number, "banned")
+                if (success && (await banUsers()) == true) {
+                    setTimeout(async () => {
+                        var content = "User banned successfully!"
+                        await conn.sendMessage(sender, content, type, options)
+                    }, getRandomInt(5000))
+                } else {
+                    setTimeout(async () => {
+                        var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a banned user, text me !banAll 39123456789. It is also possible that I added the user in my list of people to ban but I didn't actually manage to ban them"
+                        await conn.sendMessage(sender, content, type, options)
+                    }, getRandomInt(5000))
+                }
             } else if (text.includes("!addThrustedUser")) {
                 var number = text.split(" ")[1]
-                if ((await addThrustedUser(number)) == true) {
+                if ((await addUser(number, "thrusted")) == true) {
                     setTimeout(async () => {
                         var content = "Thrusted user added successfully!"
                         await conn.sendMessage(sender, content, type, options)
@@ -93,26 +99,38 @@ async function main() {
                     }, getRandomInt(5000))
                 }
             } else if (text.includes("!resetLinks")) {
-                resetLinks()
+                
             }
         }
     })
 
     conn.on('close', ({ reason, isReconnecting }) => (
-        console.log('oh no got disconnected: ' + reason + ', reconnecting: ' + isReconnecting)
+        console.log('Oh no got disconnected: ' + reason + ', reconnecting: ' + isReconnecting)
     ))
 }
 
-function initialize() {
+function initialize(ready) {
     if (ready == 2) {
-        getGroups()
         getThrustedUsers()
+        getBannedUsers()
+        getGroups(conn.chats.all())
     }
 }
 
 async function getThrustedUsers() {
     if (fs.existsSync('./thrusted_users.json')) {
-        thrustedUsers = JSON.parse(fs.readFileSync('./thrusted_users.json').toString())
+        try {
+            thrustedUsers = JSON.parse(fs.readFileSync('./thrusted_users.json').toString())
+        } catch {
+            console.log("Unable to parse previously saved thrusted users, deleting the file and starting over")
+            try {
+                fs.rmSync('./thrusted_users.json')
+                getThrustedUsers()
+            } catch {
+                console.log("Unable to delete the old file, please fix the problem yourself")
+                throw new Error()
+            }
+        }  
     } else {
         const rl = readline.createInterface({
             input: process.stdin,
@@ -121,10 +139,17 @@ async function getThrustedUsers() {
 
         await rl.question("There are no thrusted users that can give commands to this bot, please provide one via their phone number (you will be able to add more using !newThrustedUser <number> inside the bot) [example: +39 123 456 789 becomes 39123456789]\n", async (answer) => {
             const exists = await conn.isOnWhatsApp(answer)
+
             if (exists) {
                 console.log("Thrusted user added successfully, running the bot")
                 thrustedUsers.push(exists.jid)
-                fs.writeFileSync('./thrusted_users.json', JSON.stringify(thrustedUsers, null, '\t'))
+
+                try {
+                    fs.writeFileSync('./thrusted_users.json', JSON.stringify(thrustedUsers, null, '\t'))
+                } catch {
+                    console.log("Unable to save the thrusted user to a file, this will not be persistent")
+                }
+
                 rl.close();
             } else {
                 console.log("What you entered is not a WhatsApp user, please retry")
@@ -134,29 +159,79 @@ async function getThrustedUsers() {
     }
 }
 
-function getGroups() {
-    conn.chats.all().forEach(element => {
-        if (wa.isGroupID(element.jid)) {
-            myGroups.push(element.jid)
+function getBannedUsers() {
+    if (fs.existsSync('./banned_users.json')) {
+        try {
+            bannedUsers = JSON.parse(fs.readFileSync('./banned_users.json').toString())
+        } catch {
+            console.log("Unable to parse previously saved banned users, please back them up and delete the file")
+            throw new Error()
         }
-    })
-}
-
-function updateGroups(id) {
-    if (!myGroups.includes(id)) {
-        myGroups.push(id)
     }
 }
 
-async function addThrustedUser(number) {
+async function getGroups(chats) {
+    var addedNew = false
+
+    for (var i = 0; i < chats.length; i++) {
+        addedNew = await getGroupsWorker(chats[i])
+    }
+
+    if (i == 0) {
+        addedNew = await getGroupsWorker(chats)
+    }
+
+    if (addedNew) {
+        banUsers()
+    }
+}
+
+async function getGroupsWorker(chat) {
+    var id = chat.jid
+
+    if (!myGroups.includes(chat) && wa.isGroupID(id)) {
+        try {
+            myGroupsLinks.push(await conn.groupInviteCode(id)) // only add to myGroups if the bot is admin
+            myGroups.push(chat)
+            return true
+        } catch {
+            return false
+        }
+    } else {
+        return false
+    }
+}
+
+async function addUser(number, type) {
     const exists = await conn.isOnWhatsApp(number)
+
     if (exists) {
-        thrustedUsers.push(exists.jid)
-        fs.writeFileSync('./thrusted_users.json', JSON.stringify(thrustedUsers, null, '\t'))
+        var id = exists.jid
+
+        if (type == "thrusted") {
+            thrustedUsers.push(id)
+        } else {
+            bannedUsers.push(id)
+        }
+        
+        try {
+            if (type == "thrusted") {
+                fs.writeFileSync('./thrusted_users.json', JSON.stringify(thrustedUsers, null, '\t'))
+            } else {
+                fs.writeFileSync('./banned_users.json', JSON.stringify(bannedUsers, null, '\t'))
+            }
+        } catch {
+            console.log("Unable to save the new user to a file, this will not be persistent")
+        }
+
         return true
     } else {
         return false
     }
+}
+
+async function banUsers() {
+    return true
 }
 
 function resetLinks() {
@@ -177,4 +252,4 @@ function getRandomInt(max) {
     return Math.floor(Math.random() * max);
 }
 
-main().catch((err) => console.log(`encountered error: ${err}`))
+main().catch((err) => console.log(`Encountered error: ${err}`))
