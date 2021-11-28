@@ -1,6 +1,7 @@
 import * as wa from "@adiwajshing/baileys"
 import * as fs from "fs"
 import * as readline from "readline"
+import * as pdf from "pdfkit"
 
 const conn = new wa.WAConnection() // instantiate
 var myGroups = []
@@ -71,62 +72,56 @@ async function main() {
             const options: wa.MessageOptions = { quoted: m }
             var type: wa.MessageType
             type = wa.MessageType.text
-            if (text.includes("!banAll")) {
+            if (text.startsWith("!banAll")) {
                 var number = text.split(" ")[1]
                 if ((await addUser(number, "banned")) && (await banUsers())) {
-                    setTimeout(async () => {
-                        var content = "User banned successfully!"
-                        await conn.sendMessage(sender, content, type, options)
-                    }, getRandomInt(5000))
+                    await sleep(5000)
+                    var content = "User banned successfully!"
+                    await conn.sendMessage(sender, content, type, options)
                 } else {
-                    setTimeout(async () => {
-                        var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a banned user, text me !banAll 39123456789. It is also possible that I added the user in my list of people to ban but I didn't actually manage to ban them"
-                        await conn.sendMessage(sender, content, type, options)
-                    }, getRandomInt(5000))
+                    await sleep(5000)
+                    var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a banned user, text me !banAll 39123456789. It is also possible that I added the user in my list of people to ban but I didn't actually manage to ban them"
+                    await conn.sendMessage(sender, content, type, options)
                 }
-            } else if (text.includes("!addThrustedUser")) {
+            } else if (text.startsWith("!addThrustedUser")) {
                 var number = text.split(" ")[1]
                 if (await addUser(number, "thrusted")) {
-                    setTimeout(async () => {
-                        var content = "Thrusted user added successfully!"
-                        await conn.sendMessage(sender, content, type, options)
-                    }, getRandomInt(5000))
+                    await sleep(5000)
+                    var content = "Thrusted user added successfully!"
+                    await conn.sendMessage(sender, content, type, options)
                 } else {
-                    setTimeout(async () => {
-                        var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a thrusted user, text me !addThrustedUser 39123456789"
-                        await conn.sendMessage(sender, content, type, options)
-                    }, getRandomInt(5000))
+                    await sleep(5000)
+                    var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a thrusted user, text me !addThrustedUser 39123456789"
+                    await conn.sendMessage(sender, content, type, options)
                 }
             } else if (text == "!resetLinks") {
                 var list = await resetLinks()
                 if (!list.startsWith("I couldn't save")) {
-                    setTimeout(async () => {
-                        var content = "Links revoked succeffully (probably, if not I just put the old one in the list)! Here are all the groups with their invitation link:"
-                        await conn.sendMessage(sender, content, type, options)
-                        await conn.sendMessage(sender, { url: "./groups.txt" }, wa.MessageType.document, { })
-                    }, getRandomInt(5000))
+                    await sleep(5000)
+                    var content = "Links revoked succeffully (probably, check for errors in the file)! Here are all the groups with their invitation link:"
+                    await conn.sendMessage(sender, content, type, options)
+                    await sleep(5000)
+                    await conn.sendMessage(sender, { url: "./groups.pdf" }, wa.MessageType.document, { mimetype: wa.Mimetype.pdf })
                 } else {
-                    setTimeout(async () => {
-                        await conn.sendMessage(sender, list, type, options)
-                    }, getRandomInt(5000))
+                    await sleep(5000)
+                    await conn.sendMessage(sender, list, type, options)
                 }
-            } else if (text == "!printGroups") {
-                var list = await printGroups()
-                if (!list.startsWith("I couldn't save")) {
-                    setTimeout(async () => {
-                        var content = "I successfully made a file with all the groups and their invitation links, here it is:"
-                        await conn.sendMessage(
-                            sender,
-                            { url: "./groups.pdf" }, // send directly from local file
-                            wa.MessageType.document,
-                            { mimetype: wa.Mimetype.pdf, caption: content }
-                        )
-                        //await conn.sendMessage(sender, { url: "./groups.txt" }, wa.MessageType.document, { caption: content })
-                    }, getRandomInt(5000))
+            } else if (text.startsWith("!printGroups")) {
+                if (text.endsWith("-r") || text.endsWith("--reload")) {
+                    var list = await printGroups(true)
                 } else {
-                    setTimeout(async () => {
-                        await conn.sendMessage(sender, list, type, options)
-                    }, getRandomInt(5000))
+                    var list = await printGroups(false)
+                }
+
+                if (!list.startsWith("I couldn't save")) {
+                    await sleep(5000)
+                    var content = "I successfully made a file with all the groups and their invitation links (use !printGroups -r if you still see errors from a previous !resetLinks), here it is:"
+                    await conn.sendMessage(sender, content, type, options)
+                    await sleep(5000)
+                    await conn.sendMessage(sender, { url: "./groups.pdf" }, wa.MessageType.document, { mimetype: wa.Mimetype.pdf })
+                } else {
+                    await sleep(5000)
+                    await conn.sendMessage(sender, list, type, options)
                 }
             }
         }
@@ -264,35 +259,53 @@ async function banUsers() {
 
 async function resetLinks() {
     var myGroupsLinksTmp = []
+    var id
 
     for (var i = 0; i < myGroups.length; i++) {
-        setTimeout(async () => {
+        await sleep(1000)
+        try {
+            id = myGroups[i].jid
+            await conn.revokeInvite(id)
+            await sleep(1000)
             try {
-                myGroupsLinksTmp.push(await conn.revokeInvite(myGroups[i].jid))
+                myGroupsLinksTmp.push(await conn.groupInviteCode(id))
             } catch {
-                myGroupsLinksTmp.push(myGroupsLinks[i])
+                myGroupsLinksTmp.push("OLD LINK REVOKED, COULDN'T GET THE NEW ONE")
             }
-        }, getRandomInt(1000))
+        } catch {
+            myGroupsLinksTmp.push(myGroupsLinks[i] + " SAME AS OLD ONE, HAD AN ERROR RESETTING IT")
+        }
     }
 
     myGroupsLinks = myGroupsLinksTmp
 
-    return printGroups()
+    return await printGroups(false)
 }
 
-function printGroups() {
+async function printGroups(reload) {
     var list = ""
+
+    if (reload) {
+        await getGroups(conn.chats.all())
+    }
 
     for (var i = 0; i < myGroups.length; i++) {
         list += myGroups[i].name + "\nhttps://chat.whatsapp.com/" + myGroupsLinks[i] + "\n\n"
     }
 
     try {
-        fs.writeFileSync("./groups.txt", list)
+        const doc = new pdf();
+        doc.pipe(fs.createWriteStream("./groups.pdf"))
+        doc.text(list, 100, 100)
+        doc.end()
         return list
     } catch {
-        return "I couldn't save what I did to a file, i'll try to append it here\n" + list
+        return "I couldn't save what I did to a file, I'll try to append it here\n" + list
     }
+}
+
+async function sleep(max) {
+    return await new Promise(resolve => setTimeout(resolve, getRandomInt(max)))
 }
 
 function getRandomInt(max) {

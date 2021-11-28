@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const wa = require("@adiwajshing/baileys");
 const fs = require("fs");
 const readline = require("readline");
+const pdf = require("pdfkit");
 const conn = new wa.WAConnection(); // instantiate
 var myGroups = [];
 var myGroupsLinks = [];
@@ -110,7 +111,7 @@ function main() {
                         setTimeout(() => __awaiter(this, void 0, void 0, function* () {
                             var content = "Links revoked succeffully (probably, if not I just put the old one in the list)! Here are all the groups with their invitation link:";
                             yield conn.sendMessage(sender, content, type, options);
-                            yield conn.sendMessage(sender, { url: "./groups.txt" }, wa.MessageType.document, {});
+                            yield conn.sendMessage(sender, { url: "./groups.pdf" }, wa.MessageType.document, { mimetype: wa.Mimetype.pdf });
                         }), getRandomInt(5000));
                     }
                     else {
@@ -124,9 +125,8 @@ function main() {
                     if (!list.startsWith("I couldn't save")) {
                         setTimeout(() => __awaiter(this, void 0, void 0, function* () {
                             var content = "I successfully made a file with all the groups and their invitation links, here it is:";
-                            yield conn.sendMessage(sender, { url: "./groups.pdf" }, // send directly from local file
-                            wa.MessageType.document, { mimetype: wa.Mimetype.pdf, caption: content });
-                            //await conn.sendMessage(sender, { url: "./groups.txt" }, wa.MessageType.document, { caption: content })
+                            yield conn.sendMessage(sender, content, type, options);
+                            yield conn.sendMessage(sender, { url: "./groups.pdf" }, wa.MessageType.document, { mimetype: wa.Mimetype.pdf });
                         }), getRandomInt(5000));
                     }
                     else {
@@ -272,14 +272,17 @@ function resetLinks() {
     return __awaiter(this, void 0, void 0, function* () {
         var myGroupsLinksTmp = [];
         for (var i = 0; i < myGroups.length; i++) {
-            setTimeout(() => __awaiter(this, void 0, void 0, function* () {
-                try {
-                    myGroupsLinksTmp.push(yield conn.revokeInvite(myGroups[i].jid));
-                }
-                catch (_a) {
-                    myGroupsLinksTmp.push(myGroupsLinks[i]);
-                }
-            }), getRandomInt(1000));
+            yield new Promise(resolve => setTimeout(resolve, getRandomInt(10000)));
+            try {
+                var id = myGroups[i].jid;
+                var response = yield conn.revokeInvite(id);
+                var newLink = yield conn.groupInviteCode(id);
+                console.log(response + newLink);
+                myGroupsLinksTmp.push(newLink);
+            }
+            catch (_a) {
+                myGroupsLinksTmp.push(myGroupsLinks[i]);
+            }
         }
         myGroupsLinks = myGroupsLinksTmp;
         return printGroups();
@@ -291,7 +294,10 @@ function printGroups() {
         list += myGroups[i].name + "\nhttps://chat.whatsapp.com/" + myGroupsLinks[i] + "\n\n";
     }
     try {
-        fs.writeFileSync("./groups.txt", list);
+        const doc = new pdf();
+        doc.pipe(fs.createWriteStream("./groups.pdf"));
+        doc.text(list, 100, 100);
+        doc.end();
         return list;
     }
     catch (_a) {
