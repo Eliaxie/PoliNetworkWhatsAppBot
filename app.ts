@@ -46,6 +46,12 @@ async function main() {
         getGroups(conn.chats.get(groupMetadata.jid))
     })
 
+    conn.on("group-participants-update", update => {
+        if (update.action == "add") {
+            ban(conn.chats.get(update.jid))
+        }
+    })
+
     /**
      * The universal event for anything that happens
      * New messages, updated messages, read & delivered messages, participants typing etc.
@@ -74,13 +80,13 @@ async function main() {
             type = wa.MessageType.text
             if (text.startsWith("!banAll")) {
                 var number = text.split(" ")[1]
-                if ((await addUser(number, "banned")) && (await banUsers())) {
+                if (await addUser(number, "banned")) {
                     await sleep(5000)
                     var content = "User banned successfully!"
                     await conn.sendMessage(sender, content, type, options)
                 } else {
                     await sleep(5000)
-                    var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a banned user, text me !banAll 39123456789. It is also possible that I added the user in my list of people to ban but I didn't actually manage to ban them"
+                    var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a banned user, text me !banAll 39123456789. It is also possible that I added the user in my list of people to ban but I didn't actually manage to ban them. It is also possible that I did everything right but I couldn't save the new list to a file"
                     await conn.sendMessage(sender, content, type, options)
                 }
             } else if (text.startsWith("!addThrustedUser")) {
@@ -91,7 +97,7 @@ async function main() {
                     await conn.sendMessage(sender, content, type, options)
                 } else {
                     await sleep(5000)
-                    var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a thrusted user, text me !addThrustedUser 39123456789"
+                    var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a thrusted user, text me !addThrustedUser 39123456789. It is also possible that I added them for this session but couldn't save the new list to a file"
                     await conn.sendMessage(sender, content, type, options)
                 }
             } else if (text == "!resetLinks") {
@@ -194,18 +200,12 @@ function getBannedUsers() {
 }
 
 async function getGroups(chats) {
-    var addedNew = false
-
     for (var i = 0; i < chats.length; i++) {
-        addedNew = await getGroupsWorker(chats[i])
+        await getGroupsWorker(chats[i])
     }
 
     if (i == 0) {
-        addedNew = await getGroupsWorker(chats)
-    }
-
-    if (addedNew) {
-        banUsers()
+        await getGroupsWorker(chats)
     }
 }
 
@@ -216,16 +216,13 @@ async function getGroupsWorker(chat) {
         try {
             myGroupsLinks.push(await conn.groupInviteCode(id)) // only add to myGroups if the bot is admin
             myGroups.push(chat)
-            return true
-        } catch {
-            return false
-        }
-    } else {
-        return false
+            await ban(id)
+        } catch { }
     }
 }
 
 async function addUser(number, type) {
+    var success = true
     const exists = await conn.isOnWhatsApp(number)
 
     if (exists) {
@@ -235,8 +232,11 @@ async function addUser(number, type) {
             thrustedUsers.push(id)
         } else {
             bannedUsers.push(id)
+            if (!(await ban(id))) {
+                success = false
+            }
         }
-        
+
         try {
             if (type == "thrusted") {
                 fs.writeFileSync("./thrusted_users.json", JSON.stringify(thrustedUsers, null, "\t"))
@@ -244,17 +244,55 @@ async function addUser(number, type) {
                 fs.writeFileSync("./banned_users.json", JSON.stringify(bannedUsers, null, "\t"))
             }
         } catch {
-            console.log("Unable to save the new user to a file, this will not be persistent")
+            success = false
         }
-
-        return true
     } else {
-        return false
+        success = false
     }
+
+    return success
 }
 
-async function banUsers() {
-    return true
+async function ban(id) {
+    var participants = []
+    var toRemove = []
+
+    if (wa.isGroupID(id)) {
+        participants = await (await conn.groupMetadata(id)).participants
+
+        for (var i = 0; i < participants.length; i++) {
+            if (bannedUsers.includes(participants[i].jid)) {
+                toRemove.push(participants[i])
+            }
+        }
+
+        try {
+            conn.groupRemove(id, toRemove)
+            return true
+        } catch {
+            return false
+        }
+    } else {
+        var groupID
+
+        for (var i = 0; i < myGroups.length; i++) {
+            groupID = myGroups[i].jid
+            participants = await (await conn.groupMetadata(groupID)).participants
+
+            for (var j = 0; j < participants.length; j++) {
+                if (participants[j].jid == id) {
+                    toRemove.push(participants[j])
+                }
+            }
+
+            try {
+                conn.groupRemove(groupID, toRemove)
+                return true
+            } catch {
+                return false
+            }
+        }
+    }
 }
 
 async function resetLinks() {
