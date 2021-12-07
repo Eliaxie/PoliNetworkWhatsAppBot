@@ -20,10 +20,6 @@ var thrustedUsers = [];
 var bannedUsers = [];
 function main() {
     return __awaiter(this, void 0, void 0, function* () {
-        conn.autoReconnect = wa.ReconnectMode.onConnectionLost; // only automatically reconnect when the connection breaks
-        // conn.logger.level = "debug" // set to "debug" to see what kind of stuff you can implement
-        // attempt to reconnect at most 10 times in a row
-        conn.connectOptions.maxRetries = 10;
         // loads the auth file credentials if present
         /*  Note: one can take this auth_info.json file and login again from any computer without having to scan the QR code,
             and get full access to one"s WhatsApp. Despite the convenience, be careful with this file */
@@ -141,7 +137,6 @@ function main() {
                 }
             }
         }));
-        conn.on("close", ({ reason, isReconnecting }) => (console.log("Oh no got disconnected: " + reason + ", reconnecting: " + isReconnecting)));
     });
 }
 function initialize(ready) {
@@ -267,14 +262,18 @@ function ban(id) {
         var participants = [];
         var toRemove = [];
         if (wa.isGroupID(id)) {
+            var participantID;
             participants = yield (yield conn.groupMetadata(id)).participants;
             for (var i = 0; i < participants.length; i++) {
-                if (bannedUsers.includes(participants[i].jid)) {
-                    toRemove.push(participants[i]);
+                participantID = participants[i].jid;
+                if (bannedUsers.includes(participantID)) {
+                    toRemove.push(participantID);
                 }
             }
             try {
-                conn.groupRemove(id, toRemove);
+                if (toRemove[0] != null) {
+                    conn.groupRemove(id, toRemove);
+                }
                 return true;
             }
             catch (_a) {
@@ -288,12 +287,14 @@ function ban(id) {
                 participants = yield (yield conn.groupMetadata(groupID)).participants;
                 for (var j = 0; j < participants.length; j++) {
                     if (participants[j].jid == id) {
-                        toRemove.push(participants[j]);
+                        toRemove.push(id);
                         break;
                     }
                 }
                 try {
-                    conn.groupRemove(groupID, toRemove);
+                    if (toRemove[0] != null) {
+                        conn.groupRemove(groupID, toRemove);
+                    }
                     return true;
                 }
                 catch (_b) {
