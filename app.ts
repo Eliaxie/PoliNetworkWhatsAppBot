@@ -282,6 +282,7 @@ async function ban(id) {
             for (var j = 0; j < participants.length; j++) {
                 if (participants[j].jid == id) {
                     toRemove.push(participants[j])
+                    break
                 }
             }
 

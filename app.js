@@ -52,6 +52,11 @@ function main() {
         conn.on("group-update", groupMetadata => {
             getGroups(conn.chats.get(groupMetadata.jid));
         });
+        conn.on("group-participants-update", update => {
+            if (update.action == "add") {
+                ban(conn.chats.get(update.jid));
+            }
+        });
         /**
          * The universal event for anything that happens
          * New messages, updated messages, read & delivered messages, participants typing etc.
@@ -75,64 +80,63 @@ function main() {
                 const options = { quoted: m };
                 var type;
                 type = wa.MessageType.text;
-                if (text.includes("!banAll")) {
+                if (text.startsWith("!banAll")) {
                     var number = text.split(" ")[1];
-                    if ((yield addUser(number, "banned")) && (yield banUsers())) {
-                        setTimeout(() => __awaiter(this, void 0, void 0, function* () {
-                            var content = "User banned successfully!";
-                            yield conn.sendMessage(sender, content, type, options);
-                        }), getRandomInt(5000));
+                    if (yield addUser(number, "banned")) {
+                        yield sleep(5000);
+                        var content = "User banned successfully!";
+                        yield conn.sendMessage(sender, content, type, options);
                     }
                     else {
-                        setTimeout(() => __awaiter(this, void 0, void 0, function* () {
-                            var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a banned user, text me !banAll 39123456789. It is also possible that I added the user in my list of people to ban but I didn't actually manage to ban them";
-                            yield conn.sendMessage(sender, content, type, options);
-                        }), getRandomInt(5000));
+                        yield sleep(5000);
+                        var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a banned user, text me !banAll 39123456789. It is also possible that I added the user in my list of people to ban but I didn't actually manage to ban them. It is also possible that I did everything right but I couldn't save the new list to a file";
+                        yield conn.sendMessage(sender, content, type, options);
                     }
                 }
-                else if (text.includes("!addThrustedUser")) {
+                else if (text.startsWith("!addThrustedUser")) {
                     var number = text.split(" ")[1];
                     if (yield addUser(number, "thrusted")) {
-                        setTimeout(() => __awaiter(this, void 0, void 0, function* () {
-                            var content = "Thrusted user added successfully!";
-                            yield conn.sendMessage(sender, content, type, options);
-                        }), getRandomInt(5000));
+                        yield sleep(5000);
+                        var content = "Thrusted user added successfully!";
+                        yield conn.sendMessage(sender, content, type, options);
                     }
                     else {
-                        setTimeout(() => __awaiter(this, void 0, void 0, function* () {
-                            var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a thrusted user, text me !addThrustedUser 39123456789";
-                            yield conn.sendMessage(sender, content, type, options);
-                        }), getRandomInt(5000));
+                        yield sleep(5000);
+                        var content = "What you entered is not a WhatsApp user. To add +39 123 456 789 as a thrusted user, text me !addThrustedUser 39123456789. It is also possible that I added them for this session but couldn't save the new list to a file";
+                        yield conn.sendMessage(sender, content, type, options);
                     }
                 }
                 else if (text == "!resetLinks") {
                     var list = yield resetLinks();
                     if (!list.startsWith("I couldn't save")) {
-                        setTimeout(() => __awaiter(this, void 0, void 0, function* () {
-                            var content = "Links revoked succeffully (probably, if not I just put the old one in the list)! Here are all the groups with their invitation link:";
-                            yield conn.sendMessage(sender, content, type, options);
-                            yield conn.sendMessage(sender, { url: "./groups.pdf" }, wa.MessageType.document, { mimetype: wa.Mimetype.pdf });
-                        }), getRandomInt(5000));
+                        yield sleep(5000);
+                        var content = "Links revoked succeffully (probably, check for errors in the file)! Here are all the groups with their invitation link:";
+                        yield conn.sendMessage(sender, content, type, options);
+                        yield sleep(5000);
+                        yield conn.sendMessage(sender, { url: "./groups.pdf" }, wa.MessageType.document, { mimetype: wa.Mimetype.pdf });
                     }
                     else {
-                        setTimeout(() => __awaiter(this, void 0, void 0, function* () {
-                            yield conn.sendMessage(sender, list, type, options);
-                        }), getRandomInt(5000));
+                        yield sleep(5000);
+                        yield conn.sendMessage(sender, list, type, options);
                     }
                 }
-                else if (text == "!printGroups") {
-                    var list = yield printGroups();
-                    if (!list.startsWith("I couldn't save")) {
-                        setTimeout(() => __awaiter(this, void 0, void 0, function* () {
-                            var content = "I successfully made a file with all the groups and their invitation links, here it is:";
-                            yield conn.sendMessage(sender, content, type, options);
-                            yield conn.sendMessage(sender, { url: "./groups.pdf" }, wa.MessageType.document, { mimetype: wa.Mimetype.pdf });
-                        }), getRandomInt(5000));
+                else if (text.startsWith("!printGroups")) {
+                    if (text.endsWith("-r") || text.endsWith("--reload")) {
+                        var list = yield printGroups(true);
                     }
                     else {
-                        setTimeout(() => __awaiter(this, void 0, void 0, function* () {
-                            yield conn.sendMessage(sender, list, type, options);
-                        }), getRandomInt(5000));
+                        var list = yield printGroups(false);
+                    }
+                    if (!list.startsWith("I couldn't save")) {
+                        yield sleep(5000);
+                        var content = "I successfully made a file with all the groups and their invitation links (use !printGroups -r if you still see errors from a previous !resetLinks), here it is:";
+                        yield conn.sendMessage(sender, content, type, options);
+                        yield sleep(5000);
+                        yield conn.sendMessage(sender, { url: "./groups.pdf" }, wa.MessageType.document, { mimetype: wa.Mimetype.pdf });
+                    }
+                    else {
+                        yield sleep(5000);
+                        yield conn.sendMessage(sender, list, type, options);
                     }
                 }
             }
@@ -204,15 +208,11 @@ function getBannedUsers() {
 }
 function getGroups(chats) {
     return __awaiter(this, void 0, void 0, function* () {
-        var addedNew = false;
         for (var i = 0; i < chats.length; i++) {
-            addedNew = yield getGroupsWorker(chats[i]);
+            yield getGroupsWorker(chats[i]);
         }
         if (i == 0) {
-            addedNew = yield getGroupsWorker(chats);
-        }
-        if (addedNew) {
-            banUsers();
+            yield getGroupsWorker(chats);
         }
     });
 }
@@ -223,19 +223,15 @@ function getGroupsWorker(chat) {
             try {
                 myGroupsLinks.push(yield conn.groupInviteCode(id)); // only add to myGroups if the bot is admin
                 myGroups.push(chat);
-                return true;
+                yield ban(id);
             }
-            catch (_a) {
-                return false;
-            }
-        }
-        else {
-            return false;
+            catch (_a) { }
         }
     });
 }
 function addUser(number, type) {
     return __awaiter(this, void 0, void 0, function* () {
+        var success = true;
         const exists = yield conn.isOnWhatsApp(number);
         if (exists) {
             var id = exists.jid;
@@ -244,6 +240,9 @@ function addUser(number, type) {
             }
             else {
                 bannedUsers.push(id);
+                if (!(yield ban(id))) {
+                    success = false;
+                }
             }
             try {
                 if (type == "thrusted") {
@@ -254,55 +253,106 @@ function addUser(number, type) {
                 }
             }
             catch (_a) {
-                console.log("Unable to save the new user to a file, this will not be persistent");
+                success = false;
             }
-            return true;
         }
         else {
-            return false;
+            success = false;
         }
+        return success;
     });
 }
-function banUsers() {
+function ban(id) {
     return __awaiter(this, void 0, void 0, function* () {
-        return true;
+        var participants = [];
+        var toRemove = [];
+        if (wa.isGroupID(id)) {
+            participants = yield (yield conn.groupMetadata(id)).participants;
+            for (var i = 0; i < participants.length; i++) {
+                if (bannedUsers.includes(participants[i].jid)) {
+                    toRemove.push(participants[i]);
+                }
+            }
+            try {
+                conn.groupRemove(id, toRemove);
+                return true;
+            }
+            catch (_a) {
+                return false;
+            }
+        }
+        else {
+            var groupID;
+            for (var i = 0; i < myGroups.length; i++) {
+                groupID = myGroups[i].jid;
+                participants = yield (yield conn.groupMetadata(groupID)).participants;
+                for (var j = 0; j < participants.length; j++) {
+                    if (participants[j].jid == id) {
+                        toRemove.push(participants[j]);
+                        break;
+                    }
+                }
+                try {
+                    conn.groupRemove(groupID, toRemove);
+                    return true;
+                }
+                catch (_b) {
+                    return false;
+                }
+            }
+        }
     });
 }
 function resetLinks() {
     return __awaiter(this, void 0, void 0, function* () {
         var myGroupsLinksTmp = [];
+        var id;
         for (var i = 0; i < myGroups.length; i++) {
-            yield new Promise(resolve => setTimeout(resolve, getRandomInt(10000)));
+            yield sleep(1000);
             try {
-                var id = myGroups[i].jid;
-                var response = yield conn.revokeInvite(id);
-                var newLink = yield conn.groupInviteCode(id);
-                console.log(response + newLink);
-                myGroupsLinksTmp.push(newLink);
+                id = myGroups[i].jid;
+                yield conn.revokeInvite(id);
+                yield sleep(1000);
+                try {
+                    myGroupsLinksTmp.push(yield conn.groupInviteCode(id));
+                }
+                catch (_a) {
+                    myGroupsLinksTmp.push("OLD LINK REVOKED, COULDN'T GET THE NEW ONE");
+                }
             }
-            catch (_a) {
-                myGroupsLinksTmp.push(myGroupsLinks[i]);
+            catch (_b) {
+                myGroupsLinksTmp.push(myGroupsLinks[i] + " SAME AS OLD ONE, HAD AN ERROR RESETTING IT");
             }
         }
         myGroupsLinks = myGroupsLinksTmp;
-        return printGroups();
+        return yield printGroups(false);
     });
 }
-function printGroups() {
-    var list = "";
-    for (var i = 0; i < myGroups.length; i++) {
-        list += myGroups[i].name + "\nhttps://chat.whatsapp.com/" + myGroupsLinks[i] + "\n\n";
-    }
-    try {
-        const doc = new pdf();
-        doc.pipe(fs.createWriteStream("./groups.pdf"));
-        doc.text(list, 100, 100);
-        doc.end();
-        return list;
-    }
-    catch (_a) {
-        return "I couldn't save what I did to a file, i'll try to append it here\n" + list;
-    }
+function printGroups(reload) {
+    return __awaiter(this, void 0, void 0, function* () {
+        var list = "";
+        if (reload) {
+            yield getGroups(conn.chats.all());
+        }
+        for (var i = 0; i < myGroups.length; i++) {
+            list += myGroups[i].name + "\nhttps://chat.whatsapp.com/" + myGroupsLinks[i] + "\n\n";
+        }
+        try {
+            const doc = new pdf();
+            doc.pipe(fs.createWriteStream("./groups.pdf"));
+            doc.text(list, 100, 100);
+            doc.end();
+            return list;
+        }
+        catch (_a) {
+            return "I couldn't save what I did to a file, I'll try to append it here\n" + list;
+        }
+    });
+}
+function sleep(max) {
+    return __awaiter(this, void 0, void 0, function* () {
+        return yield new Promise(resolve => setTimeout(resolve, getRandomInt(max)));
+    });
 }
 function getRandomInt(max) {
     return Math.floor(Math.random() * max);
