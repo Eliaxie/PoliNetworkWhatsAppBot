@@ -3,9 +3,7 @@
   "version": "0.0.0",
   "description": "PoliNetworkWhatsAppBot",
   "main": "app.js",
-  "author": {
-    "name": ""
-  },
+  "author": "",
   "scripts": {
     "build": "tsc --build",
     "clean": "tsc --build --clean"
@@ -17,5 +15,15 @@
   "dependencies": {
     "@adiwajshing/baileys": "^3.5.3",
     "pdfkit": "^0.13.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stignarnia/PoliNetworkWhatsAppBot.git"
+  },
+  "keywords": [],
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/stignarnia/PoliNetworkWhatsAppBot/issues"
+  },
+  "homepage": "https://github.com/stignarnia/PoliNetworkWhatsAppBot#readme"
 }

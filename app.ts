@@ -15,6 +15,8 @@ async function main() {
         and get full access to one"s WhatsApp. Despite the convenience, be careful with this file */
     fs.existsSync("./auth_info.json") && conn.loadAuthInfo("./auth_info.json")
 
+    APIHandler.start();
+
     await conn.connect()
     // credentials are updated on every connect
     const authInfo = conn.base64EncodedAuthInfo() // get all the auth info we need to restore this session
@@ -341,12 +343,44 @@ async function printGroups(reload) {
     }
 }
 
-async function sleep(max) {
-    return await new Promise(resolve => setTimeout(resolve, getRandomInt(max)))
+async function sleep(max: number, min: number) {
+    if(min>max)
+        throw new Error("min cannot be more than max!");
+    return await new Promise(resolve => setTimeout(resolve, getRandomInt(max - min) + min))
+}
+
+function delay(ms: number)
+{
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function getRandomInt(max) {
     return Math.floor(Math.random() * max);
 }
+
+class APIHandler<KeyType>{
+
+    private static lastCallTimestamp: number;
+
+    private readonly minimumAwaitTime: number = 5000;
+
+    public async execute(call: () => KeyType): Promise<KeyType> {
+
+        if(APIHandler.lastCallTimestamp == null)
+            APIHandler.lastCallTimestamp = Date.now();
+
+        while(APIHandler.lastCallTimestamp + (this.minimumAwaitTime) > Date.now())
+        {
+            await sleep(2 * this.minimumAwaitTime,
+                APIHandler.lastCallTimestamp + (this.minimumAwaitTime) - Date.now());
+        }
+        const toReturn = call();
+        APIHandler.lastCallTimestamp = Date.now();
+        return toReturn;
+    }
+
+}
+
+
 
 main().catch((err) => console.log(`Encountered error: ${err}`))
